@@ -160,6 +160,41 @@ def generate_slices(mesh, start_angle=0, end_angle=90, step=0.5, num_points=500)
     return results
 
 
+def plot_cross_sections(results):
+    """
+    Plots the cross-sections for a selected set of angles.
+    """
+    plot_angles = [0, 15, 30, 45, 60, 75, 90]
+    plt.figure(figsize=(8, 10))
+
+    for angle in plot_angles:
+        # Handle float keys in results
+        angle_key = float(angle)
+        if angle_key in results:
+            r_vals, z_vals = results[angle_key]
+            plt.plot(r_vals, z_vals, ".-", markersize=1, label=f"Phi={angle}°")
+        else:
+            # Try finding closest key if exact match fails (floating point issues)
+            keys = np.array(list(results.keys()))
+            if len(keys) > 0:
+                closest_key = keys[np.argmin(np.abs(keys - angle_key))]
+                if abs(closest_key - angle_key) < 1e-5:
+                    r_vals, z_vals = results[closest_key]
+                    plt.plot(r_vals, z_vals, ".-", markersize=1, label=f"Phi={angle}°")
+                else:
+                    print(f"Warning: Angle {angle} not found in results.")
+            else:
+                print(f"Warning: Angle {angle} not found in results.")
+
+    plt.axis("equal")
+    plt.xlabel("R [mm]")
+    plt.ylabel("Z [mm]")
+    plt.title("Vacuum Chamber Cross Sections")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
     filename = "chamber_surface.stl"
@@ -176,37 +211,7 @@ if __name__ == "__main__":
         save_to_csv(results)
 
         # Plot Verification
-        plot_angles = [0, 15, 30, 45, 60, 75, 90]
-        plt.figure(figsize=(8, 10))
-
-        for angle in plot_angles:
-            # Handle float keys in results
-            angle_key = float(angle)
-            if angle_key in results:
-                r_vals, z_vals = results[angle_key]
-                plt.plot(r_vals, z_vals, ".-", markersize=1, label=f"Phi={angle}°")
-            else:
-                # Try finding closest key if exact match fails (floating point issues)
-                keys = np.array(list(results.keys()))
-                if len(keys) > 0:
-                    closest_key = keys[np.argmin(np.abs(keys - angle_key))]
-                    if abs(closest_key - angle_key) < 1e-5:
-                        r_vals, z_vals = results[closest_key]
-                        plt.plot(
-                            r_vals, z_vals, ".-", markersize=1, label=f"Phi={angle}°"
-                        )
-                    else:
-                        print(f"Warning: Angle {angle} not found in results.")
-                else:
-                    print(f"Warning: Angle {angle} not found in results.")
-
-        plt.axis("equal")
-        plt.xlabel("R [mm]")
-        plt.ylabel("Z [mm]")
-        plt.title("Vacuum Chamber Cross Sections")
-        plt.legend()
-        plt.grid(True)
-        plt.show()
+        plot_cross_sections(results)
 
     except Exception as e:
         print(f"Error: {e}")

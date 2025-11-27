@@ -2,3 +2,6 @@ trimesh
 numpy
 matplotlib
 scipy
+gmsh
+meshio
+cascadio
