@@ -42,6 +42,7 @@ def rotate_mesh_to_q1(mesh):
 def get_rz_slice(mesh, phi_degrees, num_points=200):
     """
     Slices mesh, closes the loop, and interpolates R, Z points.
+    FIXED: Uses angular sorting instead of greedy nearest-neighbor.
     """
     phi_rad = np.radians(phi_degrees)
     normal = np.array([np.sin(phi_rad), -np.cos(phi_rad), 0])
@@ -77,8 +78,8 @@ def get_rz_slice(mesh, phi_degrees, num_points=200):
     Z_raw = vertices_3d[:, 2]
     points = np.column_stack((R_raw, Z_raw))
 
-    # 4. Sort points to form a path
-    points_sorted = _sort_points_by_proximity(points)
+    # 4. Sort points to form a path - FIXED VERSION
+    points_sorted = _sort_points_by_angle(points)
 
     # Remove duplicates
     _, idx = np.unique(points_sorted, axis=0, return_index=True)
@@ -108,8 +109,29 @@ def get_rz_slice(mesh, phi_degrees, num_points=200):
     return interp_func_R(target_dists), interp_func_Z(target_dists)
 
 
+def _sort_points_by_angle(points):
+    """
+    Sort points by their angular position around the centroid.
+    This prevents self-intersecting paths.
+    """
+    if len(points) == 0:
+        return np.array([])
+
+    # Calculate centroid
+    centroid = np.mean(points, axis=0)
+
+    # Calculate angle of each point relative to centroid
+    # Using atan2(Z - Z_center, R - R_center)
+    angles = np.arctan2(points[:, 1] - centroid[1], points[:, 0] - centroid[0])
+
+    # Sort by angle
+    sorted_indices = np.argsort(angles)
+
+    return points[sorted_indices]
+
+
 def _sort_points_by_proximity(points):
-    """Greedy nearest-neighbor sort."""
+    """Greedy nearest-neighbor sort - OLD VERSION (has bugs)."""
     points_list = points.tolist()
     if not points_list:
         return np.array([])
@@ -208,7 +230,7 @@ if __name__ == "__main__":
         results = generate_slices(mesh, 0, 90, 0.5, 500)
 
         # Save to File
-        save_to_csv(results)
+        save_to_csv(results, "chamber_coordinates_fixed.csv")
 
         # Plot Verification
         plot_cross_sections(results)
