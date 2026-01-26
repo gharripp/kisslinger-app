@@ -81,6 +81,9 @@ def get_rz_slice(mesh, phi_degrees, num_points=200):
     # 4. Sort points to form a path - FIXED VERSION
     points_sorted = _sort_points_by_angle(points)
 
+    # 4.5 Normalize starting point for toroidal continuity
+    points_sorted = _normalize_starting_point(points_sorted)
+
     # Remove duplicates
     _, idx = np.unique(points_sorted, axis=0, return_index=True)
     points_sorted = points_sorted[np.sort(idx)]
@@ -128,6 +131,37 @@ def _sort_points_by_angle(points):
     sorted_indices = np.argsort(angles)
 
     return points[sorted_indices]
+
+
+def _normalize_starting_point(points):
+    """
+    Roll the points array so that index 0 is at the outboard side (maximum R).
+    This ensures toroidal continuity across slices.
+
+    We find points near the maximum R value, then pick the one with minimum Z
+    as a tie-breaker. This handles cases where the cross-section is symmetric
+    and has two points with nearly the same max R (one at +Z, one at -Z).
+    """
+    if len(points) == 0:
+        return points
+
+    # Find max R and get points within a small tolerance of it
+    max_R = points[:, 0].max()
+    R_tolerance = 0.01 * max_R  # 1% tolerance
+    near_max_R = points[:, 0] >= (max_R - R_tolerance)
+
+    if np.sum(near_max_R) > 1:
+        # Multiple points near max R - use minimum Z as tie-breaker
+        candidates = np.where(near_max_R)[0]
+        z_values = points[candidates, 1]
+        best_candidate = candidates[np.argmin(z_values)]
+        start_idx = best_candidate
+    else:
+        # Single max R point
+        start_idx = np.argmax(points[:, 0])
+
+    # Roll array so start_idx becomes index 0
+    return np.roll(points, -start_idx, axis=0)
 
 
 def _sort_points_by_proximity(points):
@@ -182,6 +216,46 @@ def generate_slices(mesh, start_angle=0, end_angle=90, step=0.5, num_points=500)
     return results
 
 
+def smooth_toroidal_continuity(results):
+    """
+    Post-process the results to ensure smooth toroidal continuity.
+    Uses propagation: for each slice, find the point closest to the previous
+    slice's point 0 and roll the array to make that the new starting point.
+    """
+    print("Smoothing toroidal continuity...")
+
+    sorted_angles = sorted(results.keys())
+    if len(sorted_angles) < 2:
+        return results
+
+    smoothed = {}
+
+    # First angle: keep as-is (already normalized to max R)
+    first_phi = sorted_angles[0]
+    smoothed[first_phi] = results[first_phi]
+    prev_R0, prev_Z0 = results[first_phi][0][0], results[first_phi][1][0]
+
+    # Process subsequent angles
+    for phi in sorted_angles[1:]:
+        r_vals, z_vals = results[phi]
+        n_points = len(r_vals)
+
+        # Find the point closest to previous slice's point 0
+        dists = np.sqrt((r_vals - prev_R0) ** 2 + (z_vals - prev_Z0) ** 2)
+        closest_idx = np.argmin(dists)
+
+        # Roll the arrays so closest_idx becomes index 0
+        if closest_idx != 0:
+            r_vals = np.roll(r_vals, -closest_idx)
+            z_vals = np.roll(z_vals, -closest_idx)
+
+        smoothed[phi] = (r_vals, z_vals)
+        prev_R0, prev_Z0 = r_vals[0], z_vals[0]
+
+    print(f"Smoothing complete.")
+    return smoothed
+
+
 def plot_cross_sections(results):
     """
     Plots the cross-sections for a selected set of angles.
@@ -226,14 +300,17 @@ if __name__ == "__main__":
         mesh = trimesh.load(filename, process=False)
         mesh = rotate_mesh_to_q1(mesh)
 
-        # Generate Slices
-        results = generate_slices(mesh, 0, 90, 0.5, 500)
+        # Generate Slices (0.25° step for higher resolution)
+        results = generate_slices(mesh, 0, 90, 0.25, 500)
+
+        # Smooth toroidal continuity by propagating starting points
+        results = smooth_toroidal_continuity(results)
 
         # Save to File
         save_to_csv(results, "chamber_coordinates_fixed.csv")
 
-        # Plot Verification
-        plot_cross_sections(results)
+        # Plot Verification (commented for headless execution)
+        # plot_cross_sections(results)
 
     except Exception as e:
         print(f"Error: {e}")
