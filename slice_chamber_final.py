@@ -207,6 +207,90 @@ def save_to_csv(results, filename="chamber_coordinates.csv"):
     print("Save complete.")
 
 
+def save_to_kisslinger(results, filename, target_phis, nfp=1):
+    """
+    Saves the results to a Kisslinger file, applying symmetry and unit conversion.
+    Reproduces logic from convert_fixed_chamber.py but adapted for this script's results.
+    """
+    print(f"Generating Kisslinger data and saving to {filename}...")
+
+    # Unique source phis from results
+    source_phis = sorted(results.keys())
+    if not source_phis:
+        print("Error: No data in results to save.")
+        return
+
+    # Use the number of points from the first slice
+    n_points = len(results[source_phis[0]][0])
+    n_tor = len(target_phis)
+
+    # Resulting arrays
+    R_all = []
+    Z_all = []
+
+    for t_phi in target_phis:
+        # Periodic 180 (half device)
+        phi_wrapped = t_phi % 180.0
+
+        if phi_wrapped <= 90.0:
+            # First quadrant: 0 -> 90 maps to 90 -> 0 in source?
+            # Wait, convert_fixed_chamber.py has:
+            # if phi_wrapped <= 90.0: s_phi_val = 90.0 - phi_wrapped; mirror_z_val = phi_wrapped < 90.0
+            # Let's check:
+            # t_phi=0 -> s_phi=90, mirror=True
+            # t_phi=90 -> s_phi=0, mirror=False
+            # This seems to be a specific mapping for that project.
+            # I will follow it exactly to match user's previous script.
+            s_phi_val = 90.0 - phi_wrapped
+            mirror_z_val = phi_wrapped < 90.0
+        else:
+            # Second quadrant: 90 -> 180 maps to 0 -> 90 in source?
+            # s_phi_val = phi_wrapped - 90.0; mirror_z_val = False
+            # t_phi=91 -> s_phi=1, mirror=False
+            # t_phi=180 -> s_phi=90, mirror=False
+            s_phi_val = phi_wrapped - 90.0
+            mirror_z_val = False
+
+        # Interpolate between nearest source_phis
+        if s_phi_val <= source_phis[0]:
+            r_int = results[source_phis[0]][0]
+            z_int = results[source_phis[0]][1]
+        elif s_phi_val >= source_phis[-1]:
+            r_int = results[source_phis[-1]][0]
+            z_int = results[source_phis[-1]][1]
+        else:
+            # Find neighbors
+            idx = np.searchsorted(source_phis, s_phi_val) - 1
+            p1 = source_phis[idx]
+            p2 = source_phis[idx + 1]
+            f = (s_phi_val - p1) / (p2 - p1)
+
+            r_int = (1 - f) * results[p1][0] + f * results[p2][0]
+            z_int = (1 - f) * results[p1][1] + f * results[p2][1]
+
+        # Convert mm to cm
+        r_cm = r_int / 10.0
+        z_cm = z_int / 10.0
+
+        if mirror_z_val:
+            z_cm = -z_cm
+
+        R_all.append(r_cm)
+        Z_all.append(z_cm)
+
+    # Write Kisslinger file
+    with open(filename, "w") as f:
+        f.write("transformed_vessel_fixed\n")
+        f.write(f"{n_tor} {n_points} {nfp} 0.0 0.0\n")
+
+        for k, phi in enumerate(target_phis):
+            f.write(f"{phi:.4f}\n")
+            for i in range(n_points):
+                f.write(f"        {R_all[k][i]:.8f} {Z_all[k][i]:.8f}\n")
+
+    print(f"Done. nphi={n_tor}, npoints={n_points}")
+
+
 def generate_slices(mesh, start_angle=0, end_angle=90, step=0.5, num_points=500):
     """
     Generates R, Z slices for the given mesh over a range of angles.
@@ -245,7 +329,6 @@ def smooth_toroidal_continuity(results):
     # Process subsequent angles
     for phi in sorted_angles[1:]:
         r_vals, z_vals = results[phi]
-        n_points = len(r_vals)
 
         # Find the point closest to previous slice's point 0
         dists = np.sqrt((r_vals - prev_R0) ** 2 + (z_vals - prev_Z0) ** 2)
@@ -259,7 +342,7 @@ def smooth_toroidal_continuity(results):
         smoothed[phi] = (r_vals, z_vals)
         prev_R0, prev_Z0 = r_vals[0], z_vals[0]
 
-    print(f"Smoothing complete.")
+    print("Smoothing complete.")
     return smoothed
 
 
@@ -315,6 +398,12 @@ if __name__ == "__main__":
 
         # Save to File
         save_to_csv(results, "chamber_coordinates_fixed.csv")
+
+        # Save to Kisslinger (matching convert_fixed_chamber.py settings)
+        target_phis = np.arange(
+            0, 361, 2.0
+        )  # Use 2.0 to match the 181 planes in vessel_fixed.kisslinger
+        save_to_kisslinger(results, "vessel_fixed.kisslinger", target_phis, nfp=1)
 
         # Plot Verification (commented for headless execution)
         # plot_cross_sections(results)
