@@ -49,3 +49,18 @@ Changed angular step from 0.5° to 0.25°, generating 361 slices instead of 181.
 | After max R norm | 16mm | Still had corner jumps |
 | After smoothing | 4mm | With 0.5° step |
 | Final (0.25° step) | 2mm | Smooth transitions |
+
+## Addendum: Duplicate Entry Fix
+**Date: 2026-01-29**
+
+### Problem
+The resulting `chamber_coordinates_fixed.csv` had ~350 consecutive duplicate entries. These occurred at the loop closure point (start/end points being identical) and were exacerbated by the toroidal smoothing rotation which placed these identical points adjacent to each other.
+
+### Solution
+Modified `slice_chamber_final.py`:
+1.  **Strict Filtering**: Added a pre-check to remove points closer than 1e-6mm in the raw slice data.
+2.  **Unique Interpolation**: Changed `np.linspace` to use `endpoint=False`. This generates 500 unique points along the closed curve, avoiding the double inclusion of the start/end point.
+
+### Verification
+-   `check_dups.py` confirms **0** duplicates in the output.
+-   Point count remains constant at **500** per angle.

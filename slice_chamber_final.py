@@ -84,13 +84,20 @@ def get_rz_slice(mesh, phi_degrees, num_points=200):
     # 4.5 Normalize starting point for toroidal continuity
     points_sorted = _normalize_starting_point(points_sorted)
 
-    # Remove duplicates
-    _, idx = np.unique(points_sorted, axis=0, return_index=True)
-    points_sorted = points_sorted[np.sort(idx)]
+    # Remove duplicates and points that are too close
+    unique_points = [points_sorted[0]]
+    for i in range(1, len(points_sorted)):
+        if np.linalg.norm(points_sorted[i] - unique_points[-1]) > 1e-6:
+            unique_points.append(points_sorted[i])
+    points_sorted = np.array(unique_points)
+
+    if len(points_sorted) < 2:
+        return None, None
 
     # --- FIX: FORCE CLOSE THE LOOP ---
-    # Append the first point to the end to bridge the gap at the bottom
-    points_sorted = np.vstack([points_sorted, points_sorted[0]])
+    # Append the first point to the end ONLY if it's not already there (or very close)
+    if np.linalg.norm(points_sorted[-1] - points_sorted[0]) > 1e-6:
+        points_sorted = np.vstack([points_sorted, points_sorted[0]])
 
     # 5. Interpolate
     diffs = np.diff(points_sorted, axis=0)
@@ -107,7 +114,7 @@ def get_rz_slice(mesh, phi_degrees, num_points=200):
 
     # Generate exactly 'num_points'
     # Note: We use 0 to total_dist inclusive to complete the circle
-    target_dists = np.linspace(0, total_dist, num_points)
+    target_dists = np.linspace(0, total_dist, num_points, endpoint=False)
 
     return interp_func_R(target_dists), interp_func_Z(target_dists)
 
